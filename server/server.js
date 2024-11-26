@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const Product = require('./models/Product'); // Importando o modelo
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -16,15 +17,6 @@ app.use(cors()); // Habilitar CORS para todas as origens
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 
-// Modelo do Produto
-const productSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  price: { type: Number, required: true },
-  quantity: { type: Number, required: true },
-});
-
-const Product = mongoose.model('Product', productSchema);
-
 // Conectar ao MongoDB
 mongoose
   .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -38,14 +30,14 @@ mongoose
 
 // Adicionar um produto
 app.post('/api/products', async (req, res) => {
-  const { name, price, quantity } = req.body;
+  const { name, brand, price, quantity } = req.body;
 
-  if (!name || !price || !quantity) {
+  if (!name || !brand || !price || !quantity) {
     return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
   }
 
   try {
-    const newProduct = new Product({ name, price, quantity });
+    const newProduct = new Product({ name, brand, price, quantity });
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (err) {
