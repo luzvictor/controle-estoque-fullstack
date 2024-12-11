@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const Product = require('./models/Product'); // Importando o modelo
+const Packaging = require('./models/Packaging'); // Importando o modelo
 const salesRoutes = require("./routes/sales");
 
 // Carregar variáveis de ambiente
@@ -32,14 +33,14 @@ mongoose
 
 // Adicionar um produto
 app.post('/api/products', async (req, res) => {
-  const { name, brand, costPrice, salePrice, quantity } = req.body;
+  const { name, brand, size, color, costPrice, salePrice, quantity } = req.body;
 
-  if (!name || !brand || !costPrice || !salePrice || !quantity) {
+  if (!name || !brand || !size || !color || !costPrice || !salePrice || !quantity) {
     return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
   }
 
   try {
-    const newProduct = new Product({ name, brand, costPrice, salePrice, quantity });
+    const newProduct = new Product({ name, brand, size, color, costPrice, salePrice, quantity });
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (err) {
@@ -50,7 +51,7 @@ app.post('/api/products', async (req, res) => {
 // Listar todos os produtos com filtros e ordenação
 app.get('/api/products', async (req, res) => {
   try {
-    const { name, brand, sortBy, sortOrder } = req.query;
+    const { name, brand, size, color, sortBy, sortOrder } = req.query;
 
     // Construir o filtro com base nos parâmetros recebidos
     const filter = {};
@@ -63,10 +64,18 @@ app.get('/api/products', async (req, res) => {
       filter.brand = { $regex: brand, $options: 'i' }; // Pesquisa "brand" com case-insensitive
     }
 
+    if (size) {
+      filter.size = { $regex: size, $options: 'i' }; // Pesquisa "size" com case-insensitive
+    }
+
+    if (color) {
+      filter.color = { $regex: color, $options: 'i' }; // Pesquisa "color" com case-insensitive
+    }
+
     // Definir a ordenação
     const sortOptions = {};
     if (sortBy) {
-      const allowedSortFields = ['name', 'price', 'quantity'];
+      const allowedSortFields = ['name', 'price', 'size', 'color',  'quantity'];
       if (!allowedSortFields.includes(sortBy)) {
         return res.status(400).json({ message: 'Campo de ordenação inválido.' });
       }
@@ -86,14 +95,16 @@ app.get('/api/products', async (req, res) => {
 app.put('/api/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, brand, costPrice, salePrice, quantity } = req.body;
+    const { name, brand, size, color, costPrice, salePrice, quantity } = req.body;
 
     console.log(`Atualizando produto com ID: ${id}`);
-    console.log(`Dados recebidos:`, { name, brand, costPrice, salePrice, quantity });
+    console.log(`Dados recebidos:`, { name, brand, size, color, costPrice, salePrice, quantity });
 
     const updatedProduct = await Product.findByIdAndUpdate(id, {
       name,
       brand,
+      size,
+      color,
       costPrice,
       salePrice,
       quantity
@@ -126,6 +137,82 @@ app.delete('/api/products/:id', async (req, res) => {
     res.status(500).json({ message: 'Erro ao remover o produto.', error: err.message });
   }
 });
+
+
+// ROTAS EMBALAGENS
+
+// Adicionar embalagem
+app.post('/api/packagings', async (req, res) => {
+  const { type, price, quantity } = req.body;
+
+  if (!type || !price || !quantity) {
+    return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
+  }
+
+  try {
+    const newPackaging = new Packaging({ type, price, quantity });
+    await newPackaging.save();
+    res.status(201).json(newPackaging);
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao salvar o produto.', error: err.message });
+  }
+});
+
+// Listar todos as embalagens
+app.get('/api/packagings', async (req, res) => {
+  try {
+    const products = await Packaging.find();
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao buscar produtos.', error: err.message });
+  }
+});
+
+// Editar Embalagem
+app.put('/api/packagings/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { price, quantity } = req.body;
+
+    console.log(`Atualizando produto com ID: ${id}`);
+    console.log(`Dados recebidos:`, { price, quantity });
+
+    const updatedPackaging = await Packaging.findByIdAndUpdate(id, {
+      price,
+      quantity
+    }, { new: true });
+
+    if (!updatedPackaging) {
+      return res.status(404).send("Embalagem não encontrada!");
+    }
+
+    res.status(200).json(updatedPackaging);
+  } catch (error) {
+    console.error("Erro ao atualizar embalagem:", error);
+    res.status(500).send("Erro ao atualizar embalagem");
+  }
+});
+
+// Remover Embalagem por ID
+app.delete('/api/packagings/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const deletedPackaging = await Product.findByIdAndDelete(id);
+
+    if (!deletedPackaging) {
+      return res.status(404).json({ message: 'Embalagem não encontrada.' });
+    }
+
+    res.json({ message: 'Embalagem removida com sucesso.', product: deletedPackaging });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao remover a embalagem.', error: err.message });
+  }
+});
+
+
+
+
 
 // ** Funções de Rota de Vendas **
 
@@ -213,6 +300,7 @@ app.get('/api/sales', async (req, res) => {
   }
 });
 
+// Rota POST para criação de vendas (corrigida)
 app.post('/api/sales', async (req, res) => {
   try {
     const { items, paymentMethod, installments, date } = req.body;
@@ -243,7 +331,7 @@ app.post('/api/sales', async (req, res) => {
         return res.status(400).json({ error: `Estoque insuficiente para o produto ${item.productId}.` });
       }
 
-      const embalagem = embalagemCustos[item.packaging];
+      const embalagem = embalagemCustos[item.packaging] || 0;
       embalagemTotal += embalagem;
       total += item.quantity * item.price;
       lucro += (item.price - embalagem - product.costPrice) * item.quantity;
@@ -256,7 +344,6 @@ app.post('/api/sales', async (req, res) => {
     } else {
       totalComJuros = total; // Sem juros
     }
-    
 
     // Criação da venda no banco de dados
     const sale = new Sale({
@@ -269,7 +356,6 @@ app.post('/api/sales', async (req, res) => {
       installments,
       date: date || Date.now(),
     });
-
 
     // Salva a venda
     const savedSale = await sale.save();
@@ -289,6 +375,7 @@ app.post('/api/sales', async (req, res) => {
     res.status(500).json({ error: "Erro interno ao criar a venda." });
   }
 });
+
 
 // Excluir uma venda
 app.delete('/api/sales/:id', async (req, res) => {

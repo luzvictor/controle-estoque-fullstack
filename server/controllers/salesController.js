@@ -1,11 +1,6 @@
 const Sale = require("../models/Sale");
 const Product = require("../models/Product");
-
-const embalagemCustos = {
-  pacote: 3.5,
-  sacolaPequena: 6.0,
-  sacolaGrande: 8.0,
-};
+const Packaging = require('../models/Packaging');
 
 const taxasDeJuros = {
   debito: 1.88 / 100,
@@ -25,66 +20,62 @@ const taxasDeJuros = {
 
 exports.createSale = async (req, res) => {
   try {
-    const { items, paymentMethod, installments, date } = req.body;
+    const { items, paymentMethod, installments, packaging } = req.body;
 
-    // Validação dos dados recebidos
-    if (!items || items.length === 0) {
-      return res.status(400).json({ error: "Os itens da venda são obrigatórios." });
+    // Deduzir embalagem do estoque
+    const usedPackaging = await Packaging.findById(packaging.id);
+    if (!usedPackaging || usedPackaging.quantity < packaging.quantity) {
+      return res.status(400).json({ error: "Estoque insuficiente de embalagem" });
     }
+    usedPackaging.quantity -= packaging.quantity;
+    await usedPackaging.save();
 
-    // Calcular o total, lucro, embalagem e juros
+    // Calcular o valor total da venda (sem juros)
     let total = 0;
-    let lucro = 0;
-    let embalagemTotal = 0;
-
-    // Verificar estoque e calcular o valor da venda
-    for (const item of items) {
-      const embalagem = embalagemCustos[item.packaging];
-      embalagemTotal += embalagem;
-
-      // Verificar se há estoque suficiente para o produto
+    let embalagemTotal = packaging.price * packaging.quantity; // Custo das embalagens
+    for (let item of items) {
       const product = await Product.findById(item.productId);
       if (!product || product.quantity < item.quantity) {
-        return res.status(400).json({ error: `Estoque insuficiente para o produto ${product.name}` });
+        return res.status(400).json({ error: "Produto com estoque insuficiente" });
       }
-
-      total += item.quantity * item.price;
-      lucro += (item.price - embalagem) * item.quantity;
-
-      // Atualiza o estoque
-      product.quantity -= item.quantity;
-      await product.save();
+      total += item.price * item.quantity;
+      product.quantity -= item.quantity; // Deduzir quantidade vendida
+      await product.save(); // Atualiza o estoque de produtos
     }
 
-    // Aplica os juros dependendo da forma de pagamento e número de parcelas
-    let juros = 0;
-    if (paymentMethod === "debito") {
-      juros = total * taxasDeJuros.debito;
-    } else if (paymentMethod === "credito" && installments === 1) {
-      juros = total * taxasDeJuros.creditoAVista;
-    } else if (paymentMethod === "credito" && installments > 1) {
-      juros = total * taxasDeJuros[installments];
+    // Calcular total com juros, dependendo do método de pagamento
+    let totalComJuros = total;
+    if (paymentMethod === 'PIX' || paymentMethod === 'Débito') {
+      totalComJuros = total + (total * taxasDeJuros[paymentMethod.toLowerCase()]);
+    } else if (paymentMethod === 'Crédito') {
+      const juros = taxasDeJuros[installments];
+      if (juros !== undefined) {
+        totalComJuros = total + (total * juros);
+      } else {
+        return res.status(400).json({ error: "Número de parcelas inválido para crédito" });
+      }
     }
 
-    const totalComJuros = total + juros;
+    // Calcular lucro (total sem juros - custo das embalagens)
+    const lucro = totalComJuros - embalagemTotal;
 
-    // Criação da venda no banco de dados
+    // Criar e salvar a venda no banco de dados
     const sale = new Sale({
       items,
-      total: totalComJuros,  // Total com juros
+      total,
+      totalComJuros,
+      embalagemTotal,
       lucro,
       paymentMethod,
       installments,
-      date: date || Date.now(),
+      date: new Date(),
     });
 
-    // Salva a venda
-    const savedSale = await sale.save();
-
-    res.status(201).json(savedSale);
+    await sale.save();
+    res.status(201).json(sale);
   } catch (error) {
-    console.error("Erro ao criar a venda:", error.message);
-    res.status(500).json({ error: "Erro interno ao criar a venda." });
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
 };
 
